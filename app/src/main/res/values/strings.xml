@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Home Sorter</string>
+    <string name="service_desc">Lets Home Sorter read your home screen and move icons into folders, only when you press Scan or Sort in the app. Nothing runs in the background and no data leaves the phone.</string>
+</resources>
