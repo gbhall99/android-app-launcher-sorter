@@ -1,9 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Android 11+ hides other apps unless declared here. LAUNCHER: the apps that can go in folders.
+         HOME: the home app itself, so resolveActivity() can name it and its strings can be read.
+         Without the HOME entry the system names nothing, the chooser or Settings' fallback home, and the
+         real launcher never "comes to the front" as far as this app can tell. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
         </intent>
     </queries>
     <application

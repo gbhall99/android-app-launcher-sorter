@@ -11,6 +11,9 @@ accessibility controls (the "Move item" → "Create folder with…" flow TalkBac
 4. Switch the service off again afterwards if you like (Settings › Accessibility).
 
 ## How it works
+- Finding the launcher: the manifest's `<queries>` lets the app see the home app (Android 11+ hides it
+  otherwise). If the system still names the wrong app, whatever the Home button brings forward is used,
+  and the log says so.
 - `Launcher.kt` drives the launcher: scans pages, reads folders, picks an icon up with the
   launcher's "Move item" action, then taps the virtual "Create folder with: X" / "Add to folder: Y"
   drop target. Wording comes from the launcher's own resources, with English fallbacks.
@@ -20,14 +23,16 @@ accessibility controls (the "Move item" → "Create folder with…" flow TalkBac
 
 ## If something goes wrong
 Tap **Diagnose** (it picks up one icon for a second and puts it back), then **Share log**.
-The file shows exactly what the launcher exposes, which is what's needed to fix the matching.
+The file shows exactly what the launcher exposes, which is what's needed to fix the matching. If the
+launcher never comes to the front, the file still lists the windows on screen and which app the system
+named as the home app.
 
 ## Testing
-`./gradlew testDebugUnitTest` runs 22 tests: end-to-end scan → plan → sort runs against `FakeLauncher`,
+`./gradlew testDebugUnitTest` runs 26 tests: end-to-end scan → plan → sort runs against `FakeLauncher`,
 a simulator of the Launcher3 behaviour this relies on (checked against AOSP source: icon actions,
 drop-target wording, page scrolling, folder isolation, name-saving rules, auto-naming, drawer placement),
 plus safety cases (dock look-alikes, missing apps, Stop, launchers hiding their strings or ids,
-no Move action) and a Robolectric test of the app's screens. Not covered: a real Pixel. Pixel
+no Move action, the system naming the wrong home app or none, Home doing nothing) and a Robolectric test of the app's screens. Not covered: a real Pixel. Pixel
 Launcher is closed-source, so the first on-device run is the final check; use the test run first.
 
 ## Build

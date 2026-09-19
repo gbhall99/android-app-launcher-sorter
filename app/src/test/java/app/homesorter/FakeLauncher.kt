@@ -17,6 +17,8 @@ class FakeLauncher(
     private val dots: Map<String, Int> = emptyMap(),
     private val clearFocusWorks: Boolean = true,   // false: only Back / closing the folder commits a name
     private val moveSupported: Boolean = true,     // false: launcher without accessible drag (gesture fallback)
+    private val reportedHome: String? = REAL,      // what the system names as the home app; null: it won't say
+    private val homeButtonWorks: Boolean = true,   // false: nothing ever comes to the front
 ) : Device {
     companion object {
         val AOSP = mapOf(
@@ -26,6 +28,7 @@ class FakeLauncher(
             "folder_name_format_exact" to "Folder: %1\$s, %2\$d items",
             "folder_name_format_overflow" to "Folder: %1\$s, %2\$d or more items",
         )
+        const val REAL = "com.google.android.apps.nexuslauncher"
         const val MOVE = 0x7f0a0001
         const val ADD = 0x7f0a0002
         const val COLS = 5; const val ROWS = 5; const val W = 1080; const val H = 2400
@@ -62,8 +65,15 @@ class FakeLauncher(
     fun loose(): List<String> = pages.flatMap { p -> p.toSortedMap().values }.filterIsInstance<App>().map { it.title }
 
     // ------------------------------------------------------------ Device
-    override val launcherPackage = "com.google.android.apps.nexuslauncher"
-    override fun launcherString(name: String) = strings?.get(name)
+    override val ownPackage = "app.homesorter"
+    private var chosen: String? = null
+    private var homePressed = false
+    override val launcherPackage get() = chosen ?: reportedHome.orEmpty()
+    override fun useLauncher(pkg: String) { chosen = pkg }
+    /** Like the real thing, nothing about the launcher is readable while the wrong package is named. */
+    override fun launcherString(name: String) = if (launcherPackage == REAL) strings?.get(name) else null
+    override fun frontApp() = if (homePressed) REAL else null
+    override fun windows() = if (homePressed) "[app $REAL active] [overlay $ownPackage]" else "[app $ownPackage active] [overlay $ownPackage]"
     override fun screen() = W to H
     override fun now() = clock
     override fun sleep(ms: Long) { clock += ms }
@@ -87,7 +97,7 @@ class FakeLauncher(
                 State.NORMAL -> Unit
             }
             Ax.HOME -> when (state) {
-                State.NORMAL -> current = 0
+                State.NORMAL -> { current = 0; homePressed = homeButtonWorks }
                 State.DRAG -> cancelDrag()
                 State.FOLDER -> closeFolder()
                 State.ALL_APPS -> state = State.NORMAL
@@ -142,7 +152,8 @@ class FakeLauncher(
         else -> strings.fmt("add_to_folder", "Add to folder: %1\$s", (child as Folder).title)
     }
 
-    override fun launcherRoot(): UiNode {
+    override fun launcherRoot(): UiNode? {
+        if (launcherPackage != REAL || !homeButtonWorks) return null
         val root = N("android.widget.FrameLayout")
         when (state) {
             State.NORMAL, State.DRAG -> {

@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Resources
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
@@ -17,21 +18,62 @@ import java.util.concurrent.TimeUnit
 
 /** Thin adapter from the accessibility framework to [Device]. Deliberately logic-free. */
 class AndroidDevice(private val svc: AccessibilityService) : Device {
-    override val launcherPackage: String = svc.packageManager.resolveActivity(
-        Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY
-    )?.activityInfo?.packageName.orEmpty()
+    override val ownPackage: String = svc.packageName
 
-    private val res = runCatching { svc.packageManager.getResourcesForApplication(launcherPackage) }.getOrNull()
+    @Volatile private var chosen: String? = null
+    @Volatile private var resolved: String? = null
+    @Volatile private var res: Pair<String, Resources?>? = null
 
-    override fun launcherString(name: String): String? = res?.let { r ->
-        r.getIdentifier(name, "string", launcherPackage).takeIf { it != 0 }?.let { runCatching { r.getString(it) }.getOrNull() }
+    /**
+     * The default home app. Since Android 11 the system only names an app the manifest's <queries>
+     * covers; when it can't, it answers with nothing, the chooser ("android") or Settings' emergency
+     * FallbackHome, none of which is the launcher, so those count as "unknown" and are asked again next
+     * time. [useLauncher] overrides the answer with whatever the Home button really opened.
+     */
+    override val launcherPackage: String
+        get() = chosen ?: resolved ?: runCatching {
+            svc.packageManager.resolveActivity(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY
+            )?.activityInfo?.packageName
+        }.getOrNull()?.takeUnless { it == "android" || it == "com.android.settings" || it == ownPackage }
+            .also { resolved = it }.orEmpty()
+
+    override fun useLauncher(pkg: String) { chosen = pkg }
+
+    override fun launcherString(name: String): String? {
+        val pkg = launcherPackage
+        if (pkg.isEmpty()) return null
+        val r = res?.takeIf { it.first == pkg }?.second
+            ?: runCatching { svc.packageManager.getResourcesForApplication(pkg) }.getOrNull().also { res = pkg to it }
+        return r?.let { r -> r.getIdentifier(name, "string", pkg).takeIf { it != 0 }?.let { runCatching { r.getString(it) }.getOrNull() } }
     }
 
     override fun launcherRoot(): UiNode? {
-        val w = svc.windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.root?.packageName == launcherPackage }
-        val root = w?.root ?: svc.rootInActiveWindow?.takeIf { it.packageName == launcherPackage }
+        val pkg = launcherPackage
+        if (pkg.isEmpty()) return null
+        val w = svc.windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.root?.packageName?.toString() == pkg }
+        val root = w?.root ?: svc.rootInActiveWindow?.takeIf { it.packageName?.toString() == pkg }
         return root?.let { AndroidNode(it, null) }
     }
+
+    override fun frontApp(): String? {
+        val apps = svc.windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            .mapNotNull { w -> w.root?.packageName?.toString()?.takeIf { it != ownPackage }?.let { w to it } }
+        val (_, pkg) = apps.firstOrNull { it.first.isActive } ?: apps.firstOrNull { it.first.isFocused }
+            ?: apps.maxByOrNull { it.first.layer } ?: return null
+        return pkg
+    }
+
+    override fun windows(): String = svc.windows.joinToString(" ") { w ->
+        val type = when (w.type) {
+            AccessibilityWindowInfo.TYPE_APPLICATION -> "app"
+            AccessibilityWindowInfo.TYPE_INPUT_METHOD -> "keyboard"
+            AccessibilityWindowInfo.TYPE_SYSTEM -> "system"
+            AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "overlay"
+            else -> "type${w.type}"
+        }
+        "[$type ${w.root?.packageName ?: w.title ?: "?"}${if (w.isActive) " active" else ""}]"
+    }.ifEmpty { "(no windows reported)" }
 
     override fun global(action: Int) = svc.performGlobalAction(action)
 
