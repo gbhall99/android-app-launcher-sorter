@@ -103,9 +103,13 @@ private fun diagnose() {
     }
 }
 
+/** The installed version, so logs and the screen always say which build produced them. */
+fun version(ctx: Context): String =
+    runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?"
+
 private fun share(ctx: Context) {
     val f = File(ctx.cacheDir, "home-sorter-diagnostics.txt")
-    f.writeText("LOG\n" + Store.lines.joinToString("\n") + "\n\n" + Store.lastDump)
+    f.writeText("Home Sorter ${version(ctx)}\n\nLOG\n" + Store.lines.joinToString("\n") + "\n\n" + Store.lastDump)
     val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
     val send = Intent(Intent.ACTION_SEND).setType("text/plain")
         .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -148,8 +152,10 @@ private fun App() {
 @Composable
 private fun Header(busy: Boolean) {
     val status by Store.status
+    val ctx = LocalContext.current
     Column {
         Text("Home Sorter", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+        Text("Version ${version(ctx)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
             "Sorts your home screen icons into folders using the launcher's own accessibility controls.",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
