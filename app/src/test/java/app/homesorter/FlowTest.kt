@@ -18,7 +18,8 @@ class FlowTest {
     private val installed = pkgs.map { (l, p) -> AppEntry(l, p, Classifier.categorise(l, p, -1)) }
 
     private fun homeScreen(strings: Map<String, String>? = FakeLauncher.AOSP, hotseatId: String? = "com.google.android.apps.nexuslauncher:id/hotseat",
-                           suggest: (List<String>) -> String? = { "Suggested" }, clearFocusWorks: Boolean = true) = FakeLauncher(
+                           suggest: (List<String>) -> String? = { "Suggested" }, clearFocusWorks: Boolean = true,
+                           reportedHome: String? = FakeLauncher.REAL, homeButtonWorks: Boolean = true) = FakeLauncher(
         pageSetup = listOf(
             listOf("Gmail", "Barclays", "Uber", "Maps", "Spotify", "Monzo"),
             listOf("Netflix", null, "Trainline", "Revolut", "Zyx", "Work" to listOf("Slack")),
@@ -26,11 +27,11 @@ class FlowTest {
         dockApps = listOf("Phone", "Chrome"),
         drawer = pkgs.keys.toList(),
         strings = strings, hotseatId = hotseatId, suggest = suggest, dots = mapOf("Gmail" to 3),
-        clearFocusWorks = clearFocusWorks,
+        clearFocusWorks = clearFocusWorks, reportedHome = reportedHome, homeButtonWorks = homeButtonWorks,
     )
 
-    private fun runAll(fake: FakeLauncher, tick: Set<String> = setOf("HSBC UK", "Teams")): Pair<List<Group>, Report> {
-        val l = Launcher(fake) {}
+    private fun runAll(fake: FakeLauncher, tick: Set<String> = setOf("HSBC UK", "Teams"), say: (String) -> Unit = {}): Pair<List<Group>, Report> {
+        val l = Launcher(fake, say)
         val inv = l.scan()
         assertEquals(listOf("Gmail", "Barclays", "Uber", "Maps", "Spotify", "Monzo", "Netflix", "Trainline", "Revolut", "Zyx"), inv.loose.map { it.label })
         assertEquals(listOf(HomeFolder("Work", listOf("Slack"))), inv.folders)
@@ -111,6 +112,39 @@ class FlowTest {
     @Test fun neverTouchesSmartspaceOrDrawerSearch() {
         val f = homeScreen(); runAll(f)
         assertTrue(f.events.none { it == "smartspace-scrolled" || it == "drawer-search-touched" || it.startsWith("dock-drop") })
+    }
+
+    // Android 11+ package visibility: until the manifest declared a HOME query, the system named Settings'
+    // fallback home (or nothing) as the home app, so the real launcher never "came to the front".
+    @Test fun adoptsTheRealHomeAppWhenTheSystemNamesTheWrongOne() {
+        val f = homeScreen(reportedHome = "com.android.settings")
+        val said = mutableListOf<String>()
+        val (_, r) = runAll(f, say = { said += it })
+        assertSorted(f, r)
+        assertEquals(FakeLauncher.REAL, f.launcherPackage)
+        assertTrue(said.toString(), said.any { it == "Home app is ${FakeLauncher.REAL}, not com.android.settings as the system said" })
+    }
+
+    @Test fun adoptsTheHomeAppWhenTheSystemWontNameIt() {
+        val f = homeScreen(reportedHome = null)
+        val said = mutableListOf<String>()
+        val (_, r) = runAll(f, say = { said += it })
+        assertSorted(f, r)
+        assertEquals(FakeLauncher.REAL, f.launcherPackage)
+        assertTrue(said.toString(), said.any { it == "Home app: ${FakeLauncher.REAL}" })
+    }
+
+    @Test fun failsNamingTheWindowsWhenNothingComesToTheFront() {
+        val f = homeScreen(homeButtonWorks = false)
+        try { Launcher(f) {}.scan(); fail("should have failed") } catch (e: DriveException) {
+            val m = e.message.orEmpty()
+            assertTrue(m, m.contains("didn't come to the front") && m.contains("expected ${FakeLauncher.REAL}") && m.contains("[app app.homesorter active]"))
+        }
+    }
+
+    @Test fun diagnoseStillProducesAReportWhenHomeFails() {
+        val out = Launcher(homeScreen(homeButtonWorks = false)) {}.diagnose()
+        assertTrue(out, out.contains("Windows before pressing Home: [app app.homesorter active]") && out.contains("FAILED: the launcher didn't come to the front"))
     }
 
     @Test fun renameCommitsEvenWithSuggestionRace() {

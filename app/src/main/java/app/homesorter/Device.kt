@@ -29,7 +29,16 @@ interface UiNode {
 }
 
 interface Device {
+    /** This app's own package, so its own window is never mistaken for the home screen. */
+    val ownPackage: String
+    /** The home app as the system names it, or "" when it won't say. See [useLauncher]. */
     val launcherPackage: String
+    /** From now on treat [pkg] as the home app: what the Home button actually brought forward. */
+    fun useLauncher(pkg: String)
+    /** Package of the app window in front, ignoring this app's own; null when there is none. */
+    fun frontApp(): String?
+    /** One line listing the windows on screen, for error messages and diagnostics. */
+    fun windows(): String
     fun launcherString(name: String): String?
     fun launcherRoot(): UiNode?
     fun global(action: Int): Boolean

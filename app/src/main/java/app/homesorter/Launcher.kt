@@ -14,7 +14,7 @@ data class Inventory(val loose: List<HomeItem>, val folders: List<HomeFolder>, v
  * If the launcher exposes no Move action, it falls back to a physical drag (same page only).
  */
 class Launcher(private val dev: Device, private val say: (String) -> Unit) {
-    private val s = LauncherStrings(dev::launcherString)
+    private var s = LauncherStrings(dev::launcherString)
     @Volatile var stopped = false
 
     private class Seen(val node: UiNode, val label: String, val folder: Boolean, val bounds: Box, val dock: Boolean, val desc: String?)
@@ -107,28 +107,53 @@ class Launcher(private val dev: Device, private val say: (String) -> Unit) {
     fun diagnose(): String {
         val sb = StringBuilder()
         sb.appendLine("Home Sorter diagnostics · ${dev.describe()}")
-        sb.appendLine(s.describe())
-        goHome()
-        sb.appendLine("\n=== Home screen ===")
-        dump(sb)
-        val first = items().firstOrNull { !it.folder && !it.dock }
-        val move = first?.node?.act(s.move)
-        if (first != null && move != null) {
-            first.node.perform(move.id)
-            pause(1000)
-            sb.appendLine("\n=== While moving “${first.label}” ===")
+        sb.appendLine("Home app named by the system: ${dev.launcherPackage.ifEmpty { "(none: not visible to this app)" }}")
+        sb.appendLine("Windows before pressing Home: ${dev.windows()}")
+        try {
+            goHome()
+            sb.appendLine("Home app in use: ${dev.launcherPackage}")
+            sb.appendLine(s.describe())
+            sb.appendLine("\n=== Home screen ===")
             dump(sb)
-            dev.global(Ax.BACK) // cancels the move; the icon goes back to its spot
-            pause(1000)
-        } else sb.appendLine("\n(no icon exposed a Move action — the drag fallback would be used)")
-        goHome()
+            val first = items().firstOrNull { !it.folder && !it.dock }
+            val move = first?.node?.act(s.move)
+            if (first != null && move != null) {
+                first.node.perform(move.id)
+                pause(1000)
+                sb.appendLine("\n=== While moving “${first.label}” ===")
+                dump(sb)
+                dev.global(Ax.BACK) // cancels the move; the icon goes back to its spot
+                pause(1000)
+            } else sb.appendLine("\n(no icon exposed a Move action — the drag fallback would be used)")
+            goHome()
+        } catch (e: DriveException) {
+            // Still worth sharing: the window list above is exactly what's needed to see why.
+            say("Diagnosing hit a problem: ${e.message}")
+            sb.appendLine("\nFAILED: ${e.message}")
+            sb.appendLine("Windows afterwards: ${dev.windows()}")
+        }
         return sb.toString()
     }
 
+    /**
+     * Presses Home (twice: the second press returns to the first page) and waits for the home app.
+     * The system may not name that app, or may name the wrong one (see AndroidDevice.launcherPackage),
+     * so if the named app never shows up, whatever the Home button actually brought forward is adopted.
+     */
     fun goHome() {
         dev.global(Ax.HOME); pause(900)
-        dev.global(Ax.HOME); pause(900) // a second press returns to the first page
-        waitFor { dev.launcherRoot() } ?: throw DriveException("the launcher didn't come to the front")
+        dev.global(Ax.HOME); pause(900)
+        if (dev.launcherPackage.isNotEmpty() && waitFor { dev.launcherRoot() } != null) return
+        val front = waitFor { dev.frontApp() }
+        if (front != null && front != dev.launcherPackage) {
+            val named = dev.launcherPackage
+            say(if (named.isEmpty()) "Home app: $front" else "Home app is $front, not $named as the system said")
+            dev.useLauncher(front)
+            s = LauncherStrings(dev::launcherString) // its wording may now be readable
+            if (waitFor(1500) { dev.launcherRoot() } != null) return
+        }
+        val expected = dev.launcherPackage.ifEmpty { "(unknown: the system won't name the home app)" }
+        throw DriveException("the launcher didn't come to the front · expected $expected · on screen: ${dev.windows()}")
     }
 
     // ------------------------------------------------------------------ moving & folders
@@ -236,8 +261,7 @@ class Launcher(private val dev: Device, private val say: (String) -> Unit) {
     // ------------------------------------------------------------------ finding things
 
     private fun check() {
-        val p = dev.launcherPackage
-        if (p.isEmpty() || p == "android") throw DriveException("no default home app is set")
+        if (dev.launcherPackage.isEmpty()) say("The system won't say which app is the home screen; using whatever Home opens")
     }
 
     private fun key(it: Seen) = "${it.label}@${it.bounds.cx},${it.bounds.cy}"
