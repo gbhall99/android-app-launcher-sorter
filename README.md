@@ -38,3 +38,8 @@ Launcher is closed-source, so the first on-device run is the final check; use th
 ## Build
 Android Studio (Ladybug or newer): open the folder and Run. Or: `./gradlew assembleDebug`
 (JDK 17, Android SDK 35). Unit tests: `./gradlew testDebugUnitTest`.
+
+GitHub Actions builds and tests every push (`.github/workflows/build.yml`). The APK is attached to
+the run under **Artifacts**, and a push to `main` also publishes it under **Releases**. All builds
+are signed with the checked-in `app/debug.keystore`, so they install over each other; an APK built
+elsewhere with a different key (such as the original 0.1) must be uninstalled first.
