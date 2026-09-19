@@ -40,6 +40,7 @@ Android Studio (Ladybug or newer): open the folder and Run. Or: `./gradlew assem
 (JDK 17, Android SDK 35). Unit tests: `./gradlew testDebugUnitTest`.
 
 GitHub Actions builds and tests every push (`.github/workflows/build.yml`). The APK is attached to
-the run under **Artifacts**, and a push to `main` also publishes it under **Releases**. All builds
+the run under **Artifacts**; a push to `main` also publishes it under **Releases**, and running the
+workflow by hand from any branch publishes a pre-release there. All builds
 are signed with the checked-in `app/debug.keystore`, so they install over each other; an APK built
 elsewhere with a different key (such as the original 0.1) must be uninstalled first.

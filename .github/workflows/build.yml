@@ -33,11 +33,13 @@ jobs:
         with:
           name: test-results-${{ github.run_number }}
           path: app/build/reports/tests/testDebugUnitTest
-      - name: Release (main only)
-        if: github.ref == 'refs/heads/main'
+      # A push to main publishes a release; a manual run from any branch publishes a pre-release.
+      - name: Release
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
           tag="v${{ steps.apk.outputs.version }}-build${{ github.run_number }}"
-          gh release create "$tag" "HomeSorter-${{ steps.apk.outputs.version }}.apk" \
+          pre=""; [ "${{ github.ref }}" = "refs/heads/main" ] || pre="--prerelease"
+          gh release create "$tag" "HomeSorter-${{ steps.apk.outputs.version }}.apk" $pre --target "${{ github.sha }}" \
             --title "Home Sorter ${{ steps.apk.outputs.version }} (build ${{ github.run_number }})" \
-            --notes "Debug build of ${{ github.sha }}. Signed with the repo's debug key, so it installs over earlier builds from this repo."
+            --notes "Debug build of ${{ github.sha }} from ${{ github.ref_name }}. Signed with the repo's debug key, so it installs over earlier builds from this repo."
