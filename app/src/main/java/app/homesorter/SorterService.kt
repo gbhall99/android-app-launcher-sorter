@@ -30,6 +30,7 @@ class SorterService : AccessibilityService() {
         launcher = Launcher(AndroidDevice(this)) { msg -> Store.log(msg); main.post { bannerText?.text = msg } }
         instance = this
         Store.post { Store.serviceOn.value = true }
+        Store.log("Home Sorter ${version(this)} connected")
     }
 
     override fun onDestroy() {

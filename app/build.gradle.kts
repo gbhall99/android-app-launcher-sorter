@@ -13,6 +13,14 @@ android {
         versionCode = 2
         versionName = "0.2"
     }
+    // One fixed debug key (checked in; it only ever signs sideload test builds) so every build,
+    // from CI or any machine, installs over the previous one instead of demanding an uninstall.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore"); storePassword = "android"
+            keyAlias = "homesorter"; keyPassword = "android"
+        }
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
